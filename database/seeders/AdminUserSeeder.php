@@ -16,7 +16,7 @@ class AdminUserSeeder extends Seeder
     {
         // Créer l'admin principal
         User::updateOrCreate(
-            ['email' => 'admin@belden.com'],
+            ['email' => 'triomphembasa@gmail.com'],
             [
                 'nom' => 'Triomphe',
                 'post_nom' => 'Mbasa',
