@@ -17,12 +17,15 @@ class lots extends Model
         'id_approvisionnement',
         'id_ligne_approvisionnement',
         'quantite_initial',
+        'prix_unitaire_stock',
         'date_reception',
         'date_expiration',
         'id_devise',
     ];
 
     protected $casts = [
+        'quantite_initial' => 'decimal:8',
+        'prix_unitaire_stock' => 'decimal:8',
         'date_reception' => 'date',
         'date_expiration' => 'date',
     ];

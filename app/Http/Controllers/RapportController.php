@@ -6,9 +6,50 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\Taux;
+use App\Models\ventes;
 
 class RapportController extends Controller
 {
+    public function credits(): JsonResponse
+    {
+        $sales = ventes::query()
+            ->with(['client', 'vendeur', 'deviseVente'])
+            ->where('reste_a_payer', '>', 0)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (ventes $sale) {
+                if (! $sale->type_paiement) {
+                    $sale->type_paiement = (float) $sale->montant_paye > 0 ? 'avance' : 'credit';
+                }
+
+                return $sale;
+            });
+
+        $totalsByCurrency = $sales
+            ->groupBy(fn (ventes $sale) => $sale->devise_vente_id ?? 'inconnue')
+            ->map(function ($currencySales) {
+                $currency = $currencySales->first()->deviseVente;
+
+                return [
+                    'devise' => $currency,
+                    'nombre_ventes' => $currencySales->count(),
+                    'total_restant' => $currencySales->sum(fn (ventes $sale) => (float) $sale->reste_a_payer),
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'ventes' => $sales,
+                'nombre_clients' => $sales->pluck('id_client')->unique()->count(),
+                'nombre_ventes' => $sales->count(),
+                'totaux_par_devise' => $totalsByCurrency,
+            ],
+        ]);
+    }
+
     public function recapJournalier(): JsonResponse
     {
         $recap = DB::table('v_recap_journalier')->first();
@@ -75,7 +116,7 @@ class RapportController extends Controller
         // Precompute average purchase price per product
         $avgPurchaseRows = DB::table('ligne_approvisionnements as la')
             ->join('lots as l', 'l.id_ligne_approvisionnement', '=', 'la.id')
-            ->select('l.id_produit', DB::raw('AVG(la.prix_unitaire) as avg_purchase'))
+            ->select('l.id_produit', DB::raw('AVG(COALESCE(la.prix_unitaire_stock, la.prix_unitaire / NULLIF(la.facteur_conversion, 0))) as avg_purchase'))
             ->groupBy('l.id_produit')
             ->get()
             ->keyBy('id_produit')
@@ -85,7 +126,7 @@ class RapportController extends Controller
         $linesQ = DB::table('ligne_ventes as lv')
             ->join('ventes as v', 'v.id', '=', 'lv.id_vente')
             ->leftJoin('devises as d', 'd.id', '=', 'lv.id_devise')
-            ->select('lv.id_produit', 'lv.quantite', 'lv.prix_vente', 'lv.id_devise', 'v.date as vente_date', 'd.code as devise_code', DB::raw('v.id as vente_id'), DB::raw('DATE(v.date) as date_vente'));
+            ->select('lv.id_produit', 'lv.quantite', 'lv.facteur_conversion', 'lv.prix_vente', 'lv.id_devise', 'v.date as vente_date', 'd.code as devise_code', DB::raw('v.id as vente_id'), DB::raw('DATE(v.date) as date_vente'));
 
         if ($start) $linesQ->whereDate('v.date', '>=', $start);
         if ($end) $linesQ->whereDate('v.date', '<=', $end);
@@ -99,7 +140,9 @@ class RapportController extends Controller
             $qty = (float) $line->quantite;
             $salePrice = (float) $line->prix_vente;
             $avgPurchase = isset($avgPurchaseRows[$prodId]) ? (float) $avgPurchaseRows[$prodId] : 0.0;
-            $profit = ($salePrice - $avgPurchase) * $qty;
+            $factor = max((float) ($line->facteur_conversion ?? 1), 0.00000001);
+            $stockQuantity = $qty * $factor;
+            $profit = ($salePrice / $factor - $avgPurchase) * $stockQuantity;
 
             // handle conversion to target currency if requested
             if ($targetDeviseId) {
@@ -150,7 +193,7 @@ class RapportController extends Controller
         // Precompute average purchase price per product
         $avgPurchaseRows = DB::table('ligne_approvisionnements as la')
             ->join('lots as l', 'l.id_ligne_approvisionnement', '=', 'la.id')
-            ->select('l.id_produit', DB::raw('AVG(la.prix_unitaire) as avg_purchase'))
+            ->select('l.id_produit', DB::raw('AVG(COALESCE(la.prix_unitaire_stock, la.prix_unitaire / NULLIF(la.facteur_conversion, 0))) as avg_purchase'))
             ->groupBy('l.id_produit')
             ->get()
             ->keyBy('id_produit')
@@ -161,7 +204,7 @@ class RapportController extends Controller
             ->join('ventes as v', 'v.id', '=', 'lv.id_vente')
             ->join('produits as p', 'p.id', '=', 'lv.id_produit')
             ->leftJoin('devises as d', 'd.id', '=', 'lv.id_devise')
-            ->select('lv.id_produit', 'p.code as produit_code', 'p.nom as produit_nom', 'lv.quantite', 'lv.prix_vente', 'lv.id_devise', 'v.date as vente_date', 'd.code as devise_code');
+            ->select('lv.id_produit', 'p.code as produit_code', 'p.nom as produit_nom', 'lv.quantite', 'lv.facteur_conversion', 'lv.prix_vente', 'lv.id_devise', 'v.date as vente_date', 'd.code as devise_code');
 
         if ($start) $linesQ->whereDate('v.date', '>=', $start);
         if ($end) $linesQ->whereDate('v.date', '<=', $end);
@@ -175,7 +218,9 @@ class RapportController extends Controller
             $qty = (float) $line->quantite;
             $salePrice = (float) $line->prix_vente;
             $avgPurchase = isset($avgPurchaseRows[$prodId]) ? (float) $avgPurchaseRows[$prodId] : 0.0;
-            $profit = ($salePrice - $avgPurchase) * $qty;
+            $factor = max((float) ($line->facteur_conversion ?? 1), 0.00000001);
+            $stockQuantity = $qty * $factor;
+            $profit = ($salePrice / $factor - $avgPurchase) * $stockQuantity;
 
             if ($targetDeviseId) {
                 $srcDevId = (int) $line->id_devise;
@@ -200,7 +245,7 @@ class RapportController extends Controller
                 ];
             }
 
-            $byProduct[$prodId]['quantite_vendue'] += $qty;
+            $byProduct[$prodId]['quantite_vendue'] += $stockQuantity;
             $byProduct[$prodId]['chiffre_affaires'] += $qty * $salePrice;
             $byProduct[$prodId]['benefice_total'] += $convertedProfit;
         }
@@ -254,7 +299,14 @@ class RapportController extends Controller
     {
         $limit = max(1, min((int) $request->query('limit', 10), 100));
 
-        $produits = DB::table('v_top_produits')
+        $produits = DB::table('produits as p')
+            ->join('categories as c', 'c.id', '=', 'p.categorie_id')
+            ->join('ligne_ventes as lv', 'lv.id_produit', '=', 'p.id')
+            ->select('p.id', 'p.code', 'p.nom', 'c.nom as categorie_nom')
+            ->selectRaw('COUNT(DISTINCT lv.id_vente) as nombre_ventes')
+            ->selectRaw('SUM(lv.quantite * COALESCE(lv.facteur_conversion, 1)) as quantite_vendue')
+            ->selectRaw('SUM(lv.quantite * lv.prix_vente) as chiffre_affaires')
+            ->groupBy('p.id', 'p.code', 'p.nom', 'c.nom')
             ->orderByDesc('chiffre_affaires')
             ->limit($limit)
             ->get();
@@ -282,13 +334,28 @@ class RapportController extends Controller
     public function margeProduit(Request $request): JsonResponse
     {
         $limit = max(1, min((int) $request->query('limit', 50), 100));
+        $sales = DB::table('ligne_ventes')
+            ->select('id_produit')
+            ->selectRaw('AVG((1.0 * prix_vente) / NULLIF(COALESCE(facteur_conversion, 1), 0)) as prix_vente_moyen')
+            ->groupBy('id_produit');
+        $purchases = DB::table('ligne_approvisionnements')
+            ->select('id_produit')
+            ->selectRaw('AVG(COALESCE(prix_unitaire_stock, (1.0 * prix_unitaire) / NULLIF(COALESCE(facteur_conversion, 1), 0))) as prix_achat_moyen')
+            ->groupBy('id_produit');
+
+        $marges = DB::table('produits as p')
+            ->joinSub($sales, 'sales', 'sales.id_produit', '=', 'p.id')
+            ->leftJoinSub($purchases, 'purchases', 'purchases.id_produit', '=', 'p.id')
+            ->select('p.id', 'p.code', 'p.nom', 'sales.prix_vente_moyen', 'purchases.prix_achat_moyen')
+            ->selectRaw('(sales.prix_vente_moyen - COALESCE(purchases.prix_achat_moyen, 0)) as marge_unitaire')
+            ->selectRaw('((sales.prix_vente_moyen - COALESCE(purchases.prix_achat_moyen, 0)) / NULLIF(sales.prix_vente_moyen, 0) * 100) as marge_pourcentage')
+            ->orderByDesc('marge_pourcentage')
+            ->limit($limit)
+            ->get();
 
         return response()->json([
             'status' => 'success',
-            'data' => DB::table('v_marge_produit')
-                ->orderByDesc('marge_pourcentage')
-                ->limit($limit)
-                ->get(),
+            'data' => $marges,
         ]);
     }
 

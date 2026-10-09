@@ -19,6 +19,7 @@ use App\Http\Controllers\RetourController;
 use App\Http\Controllers\LigneRetourController;
 use App\Http\Controllers\CaisseController;
 use App\Http\Controllers\MouvementStockFifoController;
+use App\Http\Controllers\StockInventaireController;
 use App\Http\Controllers\TransactionCaisseController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\RapportController;
@@ -51,6 +52,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     
     // Déconnexion (nécessite d'être connecté)
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::put('/account/profile', [\App\Http\Controllers\AccountController::class, 'update']);
     
     // Récupérer l'utilisateur connecté
     Route::get('/user', function(Request $request) {
@@ -69,6 +71,7 @@ Route::get('/rapports/ventes/public', [\App\Http\Controllers\ReportController::c
     Route::middleware(['admin.or.vendeur'])->group(function () {
         Route::apiResource('clients', ClientController::class);
         Route::apiResource('ventes', VenteController::class);
+        Route::get('/rapports/vendeur/export', [\App\Http\Controllers\VendeurReportController::class, 'export'])->name('rapports.vendeur.export');
         Route::post('/ventes/{id}/paiements', [VenteController::class, 'addPayment']);
         Route::post('/maishapay/session', [MaishaPayController::class, 'createSession']);
         Route::apiResource('retours', RetourController::class);
@@ -95,6 +98,8 @@ Route::get('/rapports/ventes/public', [\App\Http\Controllers\ReportController::c
     // ==================== ROUTES ADMIN UNIQUEMENT ====================
     
     Route::middleware(['admin'])->group(function () {
+        Route::get('/rapports/credits', [RapportController::class, 'credits'])->name('rapports.credits');
+        Route::post('/stocks/inventaire', [StockInventaireController::class, 'store'])->name('stocks.inventaire');
         // Gestion complète des utilisateurs (CRUD)
         Route::apiResource('users', UserController::class);
         Route::apiResource('devises', DeviseController::class)->except(['index', 'show']);

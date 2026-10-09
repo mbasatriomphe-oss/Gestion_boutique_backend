@@ -19,6 +19,7 @@ class clients extends Model
         'ville',
         'pays',
         'contact',
+        'email',
         'iduser',
     ];
 

@@ -21,6 +21,7 @@ class ventes extends Model
         'montant_paye',
         'reste_a_payer',
         'statut_paiement',
+        'type_paiement',
         'mode_paiement',
         'paiement_en_ligne',
         'frais_transaction',

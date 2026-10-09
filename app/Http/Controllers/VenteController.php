@@ -6,10 +6,14 @@ use App\Models\Taux;
 use App\Models\ventes;
 use App\Models\ligne_ventes;
 use App\Models\caisse;
+use App\Models\lots;
+use App\Models\mouvements_stock_fifos;
+use App\Models\produits;
 use App\Models\transactions_caisses;
 use App\Models\User;
 use App\Notifications\CrudActionNotification;
 use App\Notifications\StockInsuffisantNotification;
+use App\Services\ProductUnitConversionService;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Database\Eloquent\Builder;
@@ -189,8 +193,30 @@ class VenteController extends ApiCrudController
 
     public function createSaleFromPayload(array $validated, array $lineItems, array $payments): ventes
     {
+        $lineItems = $this->normalizeSaleLineItems($lineItems);
+
         return DB::transaction(function () use ($validated, $lineItems, $payments) {
             $paymentSummary = $this->calculatePaymentSummary($validated, $lineItems, $payments);
+            $paymentType = $validated['type_paiement'] ?? (
+                BigDecimal::of($paymentSummary['reste_a_payer'])->isGreaterThan(BigDecimal::of('0'))
+                    ? (BigDecimal::of($paymentSummary['montant_paye'])->isGreaterThan(BigDecimal::of('0')) ? 'avance' : 'credit')
+                    : 'total'
+            );
+            $paid = BigDecimal::of($paymentSummary['montant_paye']);
+            $remaining = BigDecimal::of($paymentSummary['reste_a_payer']);
+            $total = BigDecimal::of($paymentSummary['montant_total']);
+
+            if (
+                ($paymentType === 'credit' && ($payments !== [] || ! $remaining->isGreaterThan(BigDecimal::of('0'))))
+                || ($paymentType === 'avance' && (! $paid->isGreaterThan(BigDecimal::of('0')) || ! $remaining->isGreaterThan(BigDecimal::of('0'))))
+                || ($paymentType === 'total' && (
+                    $remaining->isGreaterThan(BigDecimal::of('0'))
+                    || $paid->isGreaterThan($total)
+                ))
+            ) {
+                throw new \RuntimeException('Le montant payé ne correspond pas au type de paiement sélectionné.');
+            }
+
             $code = $validated['code'] ?? $this->generateUniqueCode('ventes', 'code', 'VEN');
 
             /** @var ventes $vente */
@@ -204,19 +230,25 @@ class VenteController extends ApiCrudController
                 'montant_paye' => $paymentSummary['montant_paye'],
                 'reste_a_payer' => $paymentSummary['reste_a_payer'],
                 'statut_paiement' => $paymentSummary['statut_paiement'],
+                'type_paiement' => $paymentType,
                 'mode_paiement' => $validated['mode_paiement'] ?? 'cash',
                 'paiement_en_ligne' => $validated['paiement_en_ligne'] ?? false,
                 'frais_transaction' => $validated['frais_transaction'] ?? 0,
             ]);
 
             foreach ($lineItems as $item) {
-                ligne_ventes::create([
+                $line = ligne_ventes::create([
                     'id_vente'   => $vente->id,
                     'id_produit' => (int) $item['id_produit'],
-                    'quantite'   => (int) $item['quantite'],
+                    'id_unite' => (int) $item['id_unite'],
+                    'quantite'   => $item['quantite'],
+                    'facteur_conversion' => $item['facteur_conversion'],
+                    'quantite_stock' => $item['quantite_stock'],
                     'prix_vente' => $item['prix_vente'],
                     'id_devise'  => (int) $item['id_devise'],
                 ]);
+
+                $this->consumeStockFifo($line, (string) $item['quantite_stock']);
             }
 
             if (! ($validated['paiement_en_ligne'] ?? false)) {
@@ -232,18 +264,81 @@ class VenteController extends ApiCrudController
                 }
             }
 
-            return $vente->fresh(['client', 'vendeur', 'deviseVente', 'lignes.produit', 'lignes.devise', 'transactionsCaisses.caisse.devise']);
+            return $vente->fresh(['client', 'vendeur', 'deviseVente', 'lignes.produit', 'lignes.unite', 'lignes.devise', 'transactionsCaisses.caisse.devise']);
         });
+    }
+
+    private function consumeStockFifo(ligne_ventes $line, string $requiredQuantity): void
+    {
+        $remaining = BigDecimal::of($requiredQuantity);
+        $lots = lots::query()
+            ->where('id_produit', $line->id_produit)
+            ->orderBy('date_reception')
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($lots as $lot) {
+            $issued = BigDecimal::of((string) $lot->mouvementsStock()->where('type_mouvement', 'sortie')->sum('quantite'));
+            $available = BigDecimal::of((string) $lot->quantite_initial)->minus($issued);
+            if (! $available->isGreaterThan(BigDecimal::of('0'))) {
+                continue;
+            }
+
+            $taken = $available->isLessThan($remaining) ? $available : $remaining;
+            $after = $available->minus($taken);
+            mouvements_stock_fifos::create([
+                'id_lot' => $lot->id,
+                'id_ligne_vente' => $line->id,
+                'type_mouvement' => 'sortie',
+                'quantite' => $this->formatDecimal($taken),
+                'quantite_restante_avant' => $this->formatDecimal($available),
+                'quantite_restante_apres' => $this->formatDecimal($after),
+                'date_mouvement' => now()->toDateString(),
+            ]);
+
+            $remaining = $remaining->minus($taken);
+            if (! $remaining->isGreaterThan(BigDecimal::of('0'))) {
+                return;
+            }
+        }
+
+        throw new \RuntimeException('Stock insuffisant pour cette vente');
+    }
+
+    private function normalizeSaleLineItems(array $lineItems): array
+    {
+        $productIds = array_map(static fn (array $item) => (int) $item['id_produit'], $lineItems);
+        $products = produits::with('unitesVente')->whereIn('id', $productIds)->get()->keyBy('id');
+        $conversionService = app(ProductUnitConversionService::class);
+
+        foreach ($lineItems as &$item) {
+            $product = $products->get((int) $item['id_produit']);
+            $unitId = (int) ($item['id_unite'] ?? $product->unite_id);
+            $conversion = $product->unitesVente->firstWhere('id_unite', $unitId);
+
+            if (! $conversion && $unitId === (int) $product->unite_id) {
+                $factor = 1;
+            } elseif ($conversion) {
+                $factor = $conversion->facteur;
+            } else {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'lignes' => "L’unité de vente choisie n’est pas configurée pour {$product->nom}.",
+                ]);
+            }
+
+            $item['id_unite'] = $unitId;
+            $item['facteur_conversion'] = $factor;
+            $item['quantite_stock'] = $conversionService->quantityInStockUnit($item['quantite'], $factor);
+        }
+        unset($item);
+
+        return $lineItems;
     }
 
     protected function indexQuery(Request $request): Builder
     {
-        $query = ventes::with(['vendeur', 'client', 'deviseVente', 'lignes.produit', 'lignes.devise', 'transactionsCaisses.caisse.devise']);
-        $user = $request->user();
-
-        if (($user?->role ?? null) === 'vendeur') {
-            $query->where('id_vendeur', (int) $user->id);
-        }
+        $query = ventes::with(['vendeur', 'client', 'deviseVente', 'lignes.produit', 'lignes.unite', 'lignes.devise', 'transactionsCaisses.caisse.devise']);
 
         if ($request->filled('id_vendeur')) {
             $query->where('id_vendeur', $request->integer('id_vendeur'));
@@ -352,15 +447,17 @@ class VenteController extends ApiCrudController
             'id_vendeur'              => 'required|integer|exists:vendeurs,id',
             'id_client'               => 'required|integer|exists:clients,id',
             'devise_vente_id'         => 'nullable|integer|exists:devises,id',
+            'type_paiement'           => 'sometimes|string|in:total,avance,credit',
             'mode_paiement'           => 'sometimes|string|in:cash,card',
             'paiement_en_ligne'       => 'sometimes|boolean',
             'frais_transaction'       => 'sometimes|numeric|min:0',
-            'paiements'               => 'required|array|min:1',
+            'paiements'               => 'present|array',
             'paiements.*.devise_id'   => 'required|integer|exists:devises,id',
             'paiements.*.montant'     => 'required|numeric|min:0.01',
             'lignes'                  => 'required|array|min:1',
             'lignes.*.id_produit'     => 'required|integer|exists:produits,id',
-            'lignes.*.quantite'       => 'required|integer|min:1',
+            'lignes.*.quantite'       => 'required|numeric|gt:0',
+            'lignes.*.id_unite'       => 'sometimes|integer|exists:unites,id',
             'lignes.*.prix_vente'     => 'required|numeric|min:0',
             'lignes.*.id_devise'      => 'required|integer|exists:devises,id',
         ];
@@ -439,6 +536,8 @@ class VenteController extends ApiCrudController
             ], 422);
         }
 
+        $lineItems = $this->normalizeSaleLineItems($lineItems);
+
         $stockRows = DB::table('v_stock_disponible')
             ->whereIn('id', $productIds)
             ->get()
@@ -447,10 +546,10 @@ class VenteController extends ApiCrudController
         $insufficientItems = [];
         foreach ($lineItems as $item) {
             $productId = (int) $item['id_produit'];
-            $availableStock = (int) ($stockRows->get($productId)?->stock_actuel ?? 0);
-            $requestedQuantity = (int) $item['quantite'];
+            $availableStock = (float) ($stockRows->get($productId)?->stock_actuel ?? 0);
+            $requestedQuantity = (float) $item['quantite_stock'];
 
-            if ($availableStock < $requestedQuantity) {
+            if ($availableStock + 0.00000001 < $requestedQuantity) {
                 $product = DB::table('produits')->where('id', $productId)->first();
                 $insufficientItems[] = [
                     'id_produit' => $productId,
@@ -495,7 +594,7 @@ class VenteController extends ApiCrudController
                         'vente_code' => $validated['code'] ?? null,
                         'items' => array_map(static fn (array $item) => [
                             'id_produit' => (int) $item['id_produit'],
-                            'demande' => (int) $item['quantite'],
+                            'demande' => (float) $item['quantite_stock'],
                         ], $lineItems),
                         'created_by' => (int) (auth()->user()?->id ?? 0),
                         'created_by_name' => auth()->user()?->nom ?? auth()->user()?->email ?? 'Système',
@@ -525,7 +624,7 @@ class VenteController extends ApiCrudController
         $validated = $request->validate($this->updateRules($vente));
         $vente->update($validated);
 
-        $freshVente = $vente->fresh(['client', 'vendeur', 'deviseVente', 'lignes.produit', 'lignes.devise', 'transactionsCaisses.caisse.devise']);
+        $freshVente = $vente->fresh(['client', 'vendeur', 'deviseVente', 'lignes.produit', 'lignes.unite', 'lignes.devise', 'transactionsCaisses.caisse.devise']);
         $this->notifySaleAction('updated', $freshVente);
 
         return response()->json([
@@ -553,7 +652,7 @@ class VenteController extends ApiCrudController
         $lineItems = array_map(static function ($l) {
             return [
                 'id_produit' => (int) $l['id_produit'],
-                'quantite' => (int) $l['quantite'],
+                'quantite' => (string) $l['quantite'],
                 'prix_vente' => $l['prix_vente'],
                 'id_devise' => (int) $l['id_devise'],
             ];
@@ -597,7 +696,7 @@ class VenteController extends ApiCrudController
                     'statut_paiement' => $summary['statut_paiement'],
                 ]);
 
-                return $vente->fresh(['client', 'vendeur', 'deviseVente', 'lignes.produit', 'lignes.devise', 'transactionsCaisses.caisse.devise']);
+                return $vente->fresh(['client', 'vendeur', 'deviseVente', 'lignes.produit', 'lignes.unite', 'lignes.devise', 'transactionsCaisses.caisse.devise']);
             });
 
             $this->notifySaleAction('updated', $updated);

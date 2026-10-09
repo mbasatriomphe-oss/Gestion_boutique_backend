@@ -29,7 +29,7 @@ class LigneApprovisionnementController extends ApiCrudController
         return [
             'id_approvisionnement' => 'required|integer|exists:approvisionnements,id',
             'id_produit' => 'required|integer|exists:produits,id',
-            'quantite' => 'required|integer|min:1',
+            'quantite' => 'required|numeric|gt:0',
             'prix_unitaire' => 'required|numeric|min:0',
             'prix_vente' => 'nullable|numeric|min:0',
             'id_devise' => 'required|integer|exists:devises,id',
@@ -42,7 +42,7 @@ class LigneApprovisionnementController extends ApiCrudController
         return [
             'id_approvisionnement' => 'sometimes|integer|exists:approvisionnements,id',
             'id_produit' => 'sometimes|integer|exists:produits,id',
-            'quantite' => 'sometimes|integer|min:1',
+            'quantite' => 'sometimes|numeric|gt:0',
             'prix_unitaire' => 'sometimes|numeric|min:0',
             'prix_vente' => 'nullable|numeric|min:0',
             'id_devise' => 'sometimes|integer|exists:devises,id',

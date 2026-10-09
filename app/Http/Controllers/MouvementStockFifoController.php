@@ -18,9 +18,9 @@ class MouvementStockFifoController extends ApiCrudController
             'id_ligne_vente' => 'nullable|integer|exists:ligne_ventes,id',
             'id_ligne_retour' => 'nullable|integer|exists:ligne_retours,id',
             'type_mouvement' => 'required|in:entree,sortie,retour',
-            'quantite' => 'required|integer|min:1',
-            'quantite_restante_avant' => 'required|integer|min:0',
-            'quantite_restante_apres' => 'required|integer|min:0',
+            'quantite' => 'required|numeric|gt:0',
+            'quantite_restante_avant' => 'required|numeric|min:0',
+            'quantite_restante_apres' => 'required|numeric|min:0',
             'date_mouvement' => 'required|date',
         ];
     }
@@ -32,9 +32,9 @@ class MouvementStockFifoController extends ApiCrudController
             'id_ligne_vente' => 'nullable|integer|exists:ligne_ventes,id',
             'id_ligne_retour' => 'nullable|integer|exists:ligne_retours,id',
             'type_mouvement' => 'sometimes|in:entree,sortie,retour',
-            'quantite' => 'sometimes|integer|min:1',
-            'quantite_restante_avant' => 'sometimes|integer|min:0',
-            'quantite_restante_apres' => 'sometimes|integer|min:0',
+            'quantite' => 'sometimes|numeric|gt:0',
+            'quantite_restante_avant' => 'sometimes|numeric|min:0',
+            'quantite_restante_apres' => 'sometimes|numeric|min:0',
             'date_mouvement' => 'sometimes|date',
         ];
     }

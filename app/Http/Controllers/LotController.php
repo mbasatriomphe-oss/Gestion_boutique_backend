@@ -14,7 +14,7 @@ class LotController extends ApiCrudController
 
     protected function indexQuery(Request $request): Builder
     {
-        $query = lots::with(['produit', 'approvisionnement.fournisseur', 'ligneApprovisionnement', 'devise']);
+        $query = lots::with(['produit.unite', 'approvisionnement.fournisseur', 'ligneApprovisionnement.unite', 'devise']);
 
         if ($request->filled('id_produit')) {
             $query->where('id_produit', $request->integer('id_produit'));
@@ -34,7 +34,7 @@ class LotController extends ApiCrudController
             'id_produit' => 'required|integer|exists:produits,id',
             'id_approvisionnement' => 'required|integer|exists:approvisionnements,id',
             'id_ligne_approvisionnement' => 'required|integer|exists:ligne_approvisionnements,id',
-            'quantite_initial' => 'required|integer|min:0',
+            'quantite_initial' => 'required|numeric|min:0',
             'date_reception' => 'required|date',
             'date_expiration' => 'nullable|date',
             'id_devise' => 'required|integer|exists:devises,id',
@@ -48,7 +48,7 @@ class LotController extends ApiCrudController
             'id_produit' => 'sometimes|integer|exists:produits,id',
             'id_approvisionnement' => 'sometimes|integer|exists:approvisionnements,id',
             'id_ligne_approvisionnement' => 'sometimes|integer|exists:ligne_approvisionnements,id',
-            'quantite_initial' => 'sometimes|integer|min:0',
+            'quantite_initial' => 'sometimes|numeric|min:0',
             'date_reception' => 'sometimes|date',
             'date_expiration' => 'nullable|date',
             'id_devise' => 'sometimes|integer|exists:devises,id',

@@ -11,7 +11,7 @@ use Illuminate\Http\Request;
 class ClientController extends ApiCrudController
 {
     protected string $modelClass = clients::class;
-    protected array $searchable = ['nom', 'post_nom', 'prenom', 'contact', 'ville'];
+    protected array $searchable = ['nom', 'post_nom', 'prenom', 'contact', 'email', 'ville'];
 
     protected function indexQuery(Request $request): Builder
     {
@@ -22,12 +22,13 @@ class ClientController extends ApiCrudController
     {
         return [
             'nom'      => 'required|string|max:90',
-            'post_nom' => 'required|string|max:90',
-            'prenom'   => 'required|string|max:90',
-            'adresse'  => 'required|string|max:63',
-            'ville'    => 'required|string|max:50',
-            'pays'     => 'required|string|max:50',
-            'contact'  => 'required|string|max:50',
+            'post_nom' => 'nullable|string|max:90',
+            'prenom'   => 'nullable|string|max:90',
+            'adresse'  => 'nullable|string|max:63',
+            'ville'    => 'nullable|string|max:50',
+            'pays'     => 'nullable|string|max:50',
+            'contact'  => 'nullable|string|max:50',
+            'email'    => 'nullable|email|max:255',
             'iduser'   => 'nullable|integer|exists:users,id',
         ];
     }
@@ -36,12 +37,13 @@ class ClientController extends ApiCrudController
     {
         return [
             'nom'      => 'sometimes|string|max:90',
-            'post_nom' => 'sometimes|string|max:90',
-            'prenom'   => 'sometimes|string|max:90',
-            'adresse'  => 'sometimes|string|max:63',
-            'ville'    => 'sometimes|string|max:50',
-            'pays'     => 'sometimes|string|max:50',
-            'contact'  => 'sometimes|string|max:50',
+            'post_nom' => 'sometimes|nullable|string|max:90',
+            'prenom'   => 'sometimes|nullable|string|max:90',
+            'adresse'  => 'sometimes|nullable|string|max:63',
+            'ville'    => 'sometimes|nullable|string|max:50',
+            'pays'     => 'sometimes|nullable|string|max:50',
+            'contact'  => 'sometimes|nullable|string|max:50',
+            'email'    => 'sometimes|nullable|email|max:255',
             'iduser'   => 'nullable|integer|exists:users,id',
         ];
     }

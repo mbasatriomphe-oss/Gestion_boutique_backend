@@ -7,6 +7,8 @@ use App\Models\caisse;
 use App\Models\ligne_approvisionnements;
 use App\Models\lots;
 use App\Models\mouvements_stock_fifos;
+use App\Models\produits;
+use App\Services\ProductUnitConversionService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -21,7 +23,7 @@ class ApprovisionnementController extends ApiCrudController
 
     protected function indexQuery(Request $request): Builder
     {
-        $query = approvisionnements::with(['fournisseur', 'user', 'lignes.lots']);
+        $query = approvisionnements::with(['fournisseur', 'user', 'lignes.produit.unite', 'lignes.unite', 'lignes.lots']);
 
         if ($request->filled('id_fournisseur')) {
             $query->where('id_fournisseur', $request->integer('id_fournisseur'));
@@ -47,7 +49,8 @@ class ApprovisionnementController extends ApiCrudController
             'id_fournisseur' => 'required|integer|exists:fournisseurs,id',
             'lignes' => 'required|array|min:1',
             'lignes.*.id_produit' => 'required|integer|exists:produits,id',
-            'lignes.*.quantite' => 'required|integer|min:1',
+            'lignes.*.quantite' => 'required|numeric|gt:0',
+            'lignes.*.id_unite' => 'sometimes|integer|exists:unites,id',
             'lignes.*.prix_unitaire' => 'required|numeric|min:0',
             'lignes.*.prix_vente' => 'nullable|numeric|min:0',
             'lignes.*.id_devise' => 'required|integer|exists:devises,id',
@@ -114,12 +117,34 @@ class ApprovisionnementController extends ApiCrudController
             }
         }
 
-        if (count($productIds) !== count(array_unique($productIds))) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Chaque produit ne peut apparaître qu\'une seule fois dans le même approvisionnement.',
-            ], 422);
+        $products = produits::with(['unitesAchat', 'unitesVente'])->whereIn('id', $productIds)->get()->keyBy('id');
+        foreach ($lineItems as &$lineItem) {
+            $product = $products->get((int) $lineItem['id_produit']);
+            $unitId = (int) ($lineItem['id_unite'] ?? $product->unite_id);
+            $conversion = $product->unitesAchat->firstWhere('id_unite', $unitId)
+                ?? $product->unitesVente->firstWhere('id_unite', $unitId);
+
+            if (! $conversion && $unitId === (int) $product->unite_id) {
+                $factor = 1.0;
+            } elseif ($conversion) {
+                $factor = (float) $conversion->facteur;
+            } else {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "L’unité d’achat choisie n’est pas configurée pour {$product->nom}.",
+                ], 422);
+            }
+
+            $lineItem['id_unite'] = $unitId;
+            $lineItem['facteur_conversion'] = $factor;
+            $conversionService = app(ProductUnitConversionService::class);
+            $lineItem['quantite_stock'] = $conversionService->quantityInStockUnit($lineItem['quantite'], $factor);
+            $lineItem['prix_unitaire_stock'] = $conversionService->pricePerStockUnit($lineItem['prix_unitaire'], $factor);
+            $lineItem['prix_vente_stock'] = isset($lineItem['prix_vente'])
+                ? $conversionService->pricePerStockUnit($lineItem['prix_vente'], $factor)
+                : null;
         }
+        unset($lineItem);
 
         $payload = [
             'code' => $validated['code'] ?? null,
@@ -136,46 +161,48 @@ class ApprovisionnementController extends ApiCrudController
             /** @var approvisionnements $approvisionnement */
             $approvisionnement = approvisionnements::create($payload);
 
-            $driver = DB::connection()->getDriverName();
             $createdLines = [];
 
             foreach ($lineItems as $lineItem) {
                 $line = ligne_approvisionnements::create([
                     'id_approvisionnement' => $approvisionnement->id,
                     'id_produit' => (int) $lineItem['id_produit'],
-                    'quantite' => (int) $lineItem['quantite'],
+                    'id_unite' => (int) $lineItem['id_unite'],
+                    'quantite' => $lineItem['quantite'],
+                    'facteur_conversion' => $lineItem['facteur_conversion'],
+                    'quantite_stock' => $lineItem['quantite_stock'],
                     'prix_unitaire' => $lineItem['prix_unitaire'],
+                    'prix_unitaire_stock' => $lineItem['prix_unitaire_stock'],
                     'prix_vente' => $lineItem['prix_vente'] ?? null,
+                    'prix_vente_stock' => $lineItem['prix_vente_stock'],
                     'id_devise' => (int) $lineItem['id_devise'],
                     'paye_par_caisse' => isset($lineItem['paye_par_caisse']) ? (bool) $lineItem['paye_par_caisse'] : false,
                 ]);
 
-                if ($driver === 'sqlite') {
-                    $lot = lots::create([
-                        'numero_lot' => $this->generateLotNumber($approvisionnement->date, (int) $lineItem['id_produit']),
-                        'id_produit' => (int) $lineItem['id_produit'],
-                        'id_approvisionnement' => $approvisionnement->id,
-                        'id_ligne_approvisionnement' => $line->id,
-                        'quantite_initial' => (int) $lineItem['quantite'],
-                        'date_reception' => $approvisionnement->date,
-                        'date_expiration' => null,
-                        'id_devise' => (int) $lineItem['id_devise'],
-                    ]);
+                $lot = lots::create([
+                    'numero_lot' => $this->generateLotNumber($approvisionnement->date, (int) $lineItem['id_produit']),
+                    'id_produit' => (int) $lineItem['id_produit'],
+                    'id_approvisionnement' => $approvisionnement->id,
+                    'id_ligne_approvisionnement' => $line->id,
+                    'quantite_initial' => $lineItem['quantite_stock'],
+                    'date_reception' => $approvisionnement->date,
+                    'date_expiration' => null,
+                    'id_devise' => (int) $lineItem['id_devise'],
+                ]);
 
-                    mouvements_stock_fifos::create([
-                        'id_lot' => $lot->id,
-                        'type_mouvement' => 'entree',
-                        'quantite' => (int) $lineItem['quantite'],
-                        'quantite_restante_avant' => 0,
-                        'quantite_restante_apres' => (int) $lineItem['quantite'],
-                        'date_mouvement' => $approvisionnement->date,
-                    ]);
-                }
+                mouvements_stock_fifos::create([
+                    'id_lot' => $lot->id,
+                    'type_mouvement' => 'entree',
+                    'quantite' => $lineItem['quantite_stock'],
+                    'quantite_restante_avant' => 0,
+                    'quantite_restante_apres' => $lineItem['quantite_stock'],
+                    'date_mouvement' => $approvisionnement->date,
+                ]);
 
                 $createdLines[] = $line->fresh(['produit', 'devise', 'lots']);
             }
 
-            return $approvisionnement->fresh(['fournisseur', 'user', 'lignes.produit', 'lignes.devise', 'lignes.lots']);
+            return $approvisionnement->fresh(['fournisseur', 'user', 'lignes.produit.unite', 'lignes.unite', 'lignes.devise', 'lignes.lots']);
         });
 
         return response()->json([
@@ -200,7 +227,7 @@ class ApprovisionnementController extends ApiCrudController
 
         return response()->json([
             'status' => 'success',
-            'data' => $approvisionnement->fresh(['fournisseur', 'user', 'lignes.produit', 'lignes.devise', 'lignes.lots']),
+            'data' => $approvisionnement->fresh(['fournisseur', 'user', 'lignes.produit.unite', 'lignes.unite', 'lignes.devise', 'lignes.lots']),
         ]);
     }
 

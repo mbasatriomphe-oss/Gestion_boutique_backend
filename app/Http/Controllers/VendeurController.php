@@ -36,7 +36,8 @@ class VendeurController extends ApiCrudController
             'nom'       => 'sometimes|string|max:100',
             'prenom'    => 'sometimes|string|max:100',
             'email'     => ['sometimes', 'email', 'max:255', Rule::unique('vendeurs', 'email')->ignore($model->getKey())],
-            'password'  => 'sometimes|string|min:6',
+            'password'  => 'sometimes|string|min:6|confirmed',
+            'password_confirmation' => 'required_with:password|string|min:6',
             'telephone' => 'nullable|string|max:20',
             'adresse'   => 'nullable|string|max:255',
         ];

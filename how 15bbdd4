@@ -1,0 +1,25 @@
+[33m13128fe[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m harden production login database connection
+[33m05d013a[m fix admin seeder duplicate email
+[33ma031bbe[m fix JSON request body for Laravel login
+[33m78410ba[m correction pour heberger
+[33mcc5504a[m correction de mon fichier docker
+[33m89afb74[m mon premier commit
+[33me6e756d[m commit avant changement et integration de la logique des attribut et sous attribu
+[33m4f006a2[m commit avant logique tutoré
+[33md2c0b23[m Ajout du Dockerfile pour Render latest
+[33m17e21ba[m Ajout du Dockerfile pour Render et d'autres fichier
+[33m6b870d5[m Ajout du Dockerfile pour Render
+[33m3f1d54d[m ajout de la troisioeme devise et qui marche
+[33m360ebb3[m fiche de stock disponible dans le projet
+[33m788632b[m importation des pdf
+[33m8a8ac1a[m la fonctionnnalité pour changer la devise d'un approvisionnement
+[33m7e68ed3[m gestion des payement des dettes
+[33mc617efc[m mis en marche du payement cach avec changement de devise
+[33m219e828[m la responsivité marche  déjà
+[33m924b2ca[m mis en marche de l'annulation d'une vente et la caisse et la quantité bien géré
+[33m6cf2417[m commit avec affichage produit et photos
+[33ma0a842e[m commit avec affichage produit
+[33mabd13f6[m commit avec mis en marche de page unite front
+[33mfe11822[m controller d'authentification qui marche déjà
+[33m3517185[m mis en place de toute mes migration
+[33mb9605d5[m mon premier commit

@@ -14,12 +14,18 @@ class ligne_ventes extends Model
     protected $fillable = [
         'id_vente',
         'id_produit',
+        'id_unite',
         'quantite',
+        'facteur_conversion',
+        'quantite_stock',
         'prix_vente',
         'id_devise',
     ];
 
     protected $casts = [
+        'quantite' => 'decimal:8',
+        'facteur_conversion' => 'decimal:8',
+        'quantite_stock' => 'decimal:8',
         'prix_vente' => 'decimal:8',
     ];
 
@@ -36,6 +42,11 @@ class ligne_ventes extends Model
     public function devise()
     {
         return $this->belongsTo(devise::class, 'id_devise');
+    }
+
+    public function unite()
+    {
+        return $this->belongsTo(unites::class, 'id_unite');
     }
 
     public function mouvementsStock()

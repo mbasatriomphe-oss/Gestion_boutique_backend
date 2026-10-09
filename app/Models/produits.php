@@ -18,11 +18,31 @@ class produits extends Model
         'photo',
         'unite_id',
         'categorie_id',
+        'seuil_alerte',
+    ];
+
+    protected $casts = [
+        'seuil_alerte' => 'decimal:8',
     ];
 
     public function unite()
     {
         return $this->belongsTo(unites::class, 'unite_id');
+    }
+
+    public function unitesAchat()
+    {
+        return $this->hasMany(produit_unites::class, 'id_produit')->where('type', 'achat')->with(['unite', 'devise']);
+    }
+
+    public function unitesVente()
+    {
+        return $this->hasMany(produit_unites::class, 'id_produit')->where('type', 'vente')->with(['unite', 'devise']);
+    }
+
+    public function unites()
+    {
+        return $this->hasMany(produit_unites::class, 'id_produit');
     }
 
     public function categorie()

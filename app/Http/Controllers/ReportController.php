@@ -72,7 +72,7 @@ class ReportController extends BaseController
                 'l.id_devise',
                 'd.code as source_devise_code',
                 'd.symbole as source_devise_symbole',
-                'la.prix_unitaire'
+                DB::raw('COALESCE(la.prix_unitaire_stock, la.prix_unitaire / NULLIF(la.facteur_conversion, 0), l.prix_unitaire_stock) as prix_unitaire')
             )
             ->when($productId, fn($q) => $q->where('l.id_produit', $productId))
             ->orderBy('m.date_mouvement')
@@ -90,9 +90,9 @@ class ReportController extends BaseController
                 }
             }
 
-            $quantiteEntree = $row->type_mouvement === 'entree' ? (int) $row->quantite : 0;
-            $quantiteSortie = $row->type_mouvement === 'sortie' ? (int) $row->quantite : 0;
-            $quantiteStock = max(0, (int) ($row->quantite_restante_apres ?? 0));
+            $quantiteEntree = $row->type_mouvement === 'entree' ? (float) $row->quantite : 0;
+            $quantiteSortie = $row->type_mouvement === 'sortie' ? (float) $row->quantite : 0;
+            $quantiteStock = max(0, (float) ($row->quantite_restante_apres ?? 0));
 
             return [
                 'produit_nom' => $row->produit_nom,
@@ -278,8 +278,9 @@ class ReportController extends BaseController
             return response()->json(['message' => 'Missing html'], 400);
         }
 
+        $orientation = $request->input('orientation') === 'portrait' ? 'portrait' : 'landscape';
         $pdf = Pdf::loadHTML($html)
-            ->setPaper('a4', 'landscape')
+            ->setPaper('a4', $orientation)
             ->setOption('dpi', 150)
             ->setOption('enable-local-file-access', true);
 
