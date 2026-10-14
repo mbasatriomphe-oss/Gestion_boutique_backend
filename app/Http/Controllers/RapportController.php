@@ -370,6 +370,12 @@ class RapportController extends Controller
         if ($request->filled('type')) {
             $query->where('type', $request->string('type'));
         }
+        if ($request->filled('date_debut')) {
+            $query->whereDate('date_mouvement', '>=', $request->date('date_debut'));
+        }
+        if ($request->filled('date_fin')) {
+            $query->whereDate('date_mouvement', '<=', $request->date('date_fin'));
+        }
 
         return response()->json([
             'status' => 'success',

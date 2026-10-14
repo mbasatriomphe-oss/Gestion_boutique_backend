@@ -117,6 +117,10 @@ class CaisseController extends ApiCrudController
                 'created_by' => $validated['created_by'] ?? auth()->id(),
             ]);
 
+            if ($validated['reference_type'] === 'sortie_caisse') {
+                $transaction->update(['reference_id' => $transaction->getKey()]);
+            }
+
             return response()->json([
                 'status' => 'success',
                 'data' => [

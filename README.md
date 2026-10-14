@@ -57,3 +57,9 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+## Sauvegardes quotidiennes
+
+Dans l’administration, la page **Sauvegardes** permet de configurer une adresse e-mail et un fuseau horaire pour envoyer chaque jour à 18 h une sauvegarde SQL. Le serveur doit utiliser MySQL/MariaDB, disposer d’un mailer réel (par exemple SMTP) configuré via `MAIL_MAILER`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` et `MAIL_FROM_ADDRESS`, et exécuter le planificateur Laravel.
+
+En production, configurez le planificateur système pour lancer `php artisan schedule:run` chaque minute depuis le dossier `Backend`. En développement, utilisez `php artisan schedule:work`. Si l’envoi e-mail échoue après la génération, une copie de secours est conservée sur le serveur et téléchargeable depuis cette page; les administrateurs reçoivent aussi une notification dans l’application.

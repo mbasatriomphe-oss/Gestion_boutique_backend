@@ -98,6 +98,11 @@ Route::get('/rapports/ventes/public', [\App\Http\Controllers\ReportController::c
     // ==================== ROUTES ADMIN UNIQUEMENT ====================
     
     Route::middleware(['admin'])->group(function () {
+        Route::get('/admin/backup/database', [\App\Http\Controllers\DatabaseBackupController::class, 'download'])->name('admin.backup.database');
+        Route::get('/admin/backup/database/latest-local', [\App\Http\Controllers\DatabaseBackupController::class, 'downloadLatestLocal'])->name('admin.backup.database.latest-local');
+        Route::get('/admin/backup/settings', [\App\Http\Controllers\DatabaseBackupController::class, 'settings'])->name('admin.backup.settings');
+        Route::put('/admin/backup/settings', [\App\Http\Controllers\DatabaseBackupController::class, 'updateSettings'])->name('admin.backup.settings.update');
+        Route::post('/admin/backup/database/email', [\App\Http\Controllers\DatabaseBackupController::class, 'sendNow'])->name('admin.backup.database.email');
         Route::get('/rapports/credits', [RapportController::class, 'credits'])->name('rapports.credits');
         Route::post('/stocks/inventaire', [StockInventaireController::class, 'store'])->name('stocks.inventaire');
         // Gestion complète des utilisateurs (CRUD)

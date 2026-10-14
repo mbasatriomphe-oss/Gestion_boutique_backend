@@ -11,6 +11,7 @@ use App\Models\mouvements_stock_fifos;
 use App\Models\produits;
 use App\Models\transactions_caisses;
 use App\Models\User;
+use App\Models\vendeurs;
 use App\Notifications\CrudActionNotification;
 use App\Notifications\StockInsuffisantNotification;
 use App\Services\ProductUnitConversionService;
@@ -635,8 +636,12 @@ class VenteController extends ApiCrudController
 
     public function addPayment(Request $request, int $id): JsonResponse
     {
-        if ($response = $this->ensureVendorUser()) {
-            return $response;
+        $user = auth()->user();
+        if (! $user || (! $user instanceof vendeurs && ! in_array($user->role ?? null, ['admin', 'vendeur'], true))) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Seuls un administrateur ou un vendeur peuvent enregistrer un paiement.',
+            ], 403);
         }
 
         $rules = [
@@ -647,23 +652,26 @@ class VenteController extends ApiCrudController
 
         $validated = $request->validate($rules);
 
-        $vente = ventes::with('lignes')->findOrFail($id);
-
-        $lineItems = array_map(static function ($l) {
-            return [
-                'id_produit' => (int) $l['id_produit'],
-                'quantite' => (string) $l['quantite'],
-                'prix_vente' => $l['prix_vente'],
-                'id_devise' => (int) $l['id_devise'],
-            ];
-        }, $vente->lignes->map(function ($l) {
-            return ['id_produit' => $l->id_produit, 'quantite' => $l->quantite, 'prix_vente' => $l->prix_vente, 'id_devise' => $l->id_devise];
-        })->all());
-
         $payments = $validated['paiements'];
 
         try {
-            $updated = DB::transaction(function () use ($validated, $lineItems, $payments, $vente) {
+            $updated = DB::transaction(function () use ($id, $payments) {
+                $vente = ventes::query()
+                    ->with('lignes')
+                    ->lockForUpdate()
+                    ->findOrFail($id);
+
+                if ((float) $vente->reste_a_payer <= 0) {
+                    throw new \RuntimeException('Cette vente ne présente aucun solde à payer.');
+                }
+
+                $lineItems = $vente->lignes->map(static fn ($line) => [
+                    'id_produit' => (int) $line->id_produit,
+                    'quantite' => (string) $line->quantite,
+                    'prix_vente' => $line->prix_vente,
+                    'id_devise' => (int) $line->id_devise,
+                ])->all();
+
                 // Validate that a caisse exists for each payment devise before recording
                 foreach ($payments as $payment) {
                     $deviseId = (int) $payment['devise_id'];
@@ -673,7 +681,18 @@ class VenteController extends ApiCrudController
                     }
                 }
 
-                // Record cash movements for each payment
+                $validatedContext = [
+                    'devise_vente_id' => $vente->devise_vente_id,
+                    'date' => $vente->date->toDateString(),
+                    'frais_transaction' => $vente->frais_transaction ?? 0,
+                ];
+                $allPayments = array_merge($this->collectExistingPayments($vente->id), $payments);
+                $summary = $this->calculatePaymentSummary($validatedContext, $lineItems, $allPayments);
+
+                if (BigDecimal::of($summary['montant_paye'])->isGreaterThan(BigDecimal::of($summary['montant_total']))) {
+                    throw new \RuntimeException('Le montant versé dépasse le solde restant de cette vente.');
+                }
+
                 foreach ($payments as $payment) {
                     $this->recordCashMovement(
                         (int) $payment['devise_id'],
@@ -684,10 +703,6 @@ class VenteController extends ApiCrudController
                         'Paiement (complément) de la vente #' . $vente->code,
                     );
                 }
-
-                // Recalculate payment summary
-                $validatedContext = ['devise_vente_id' => $vente->devise_vente_id, 'date' => $vente->date->toDateString()];
-                $summary = $this->calculatePaymentSummary($validatedContext, $lineItems, array_merge($this->collectExistingPayments($vente->id), $payments));
 
                 $vente->update([
                     'montant_total' => $summary['montant_total'],
@@ -712,6 +727,7 @@ class VenteController extends ApiCrudController
         $rows = transactions_caisses::query()
             ->where('reference_type', 'vente')
             ->where('reference_id', $venteId)
+            ->where('type', 'entree')
             ->get()
             ->map(function ($t) {
                 return ['devise_id' => $t->caisse?->id_devise ?? null, 'montant' => $t->montant];
