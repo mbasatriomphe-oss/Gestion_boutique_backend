@@ -10,6 +10,16 @@ if (!$mysqlSslCa && $configuredSslCa && is_file($configuredSslCa)) {
     $mysqlSslCa = $configuredSslCa;
 }
 
+// TiDB Cloud requires TLS; use the system trust store when no CA is specified.
+if (!$mysqlSslCa && str_ends_with(strtolower((string) env('DB_HOST', '')), '.tidbcloud.com')) {
+    foreach (['/etc/ssl/certs/ca-certificates.crt', '/etc/ssl/cert.pem'] as $systemCa) {
+        if (is_file($systemCa)) {
+            $mysqlSslCa = $systemCa;
+            break;
+        }
+    }
+}
+
 return [
 
     /*

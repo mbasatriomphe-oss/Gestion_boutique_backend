@@ -7,6 +7,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
@@ -119,10 +120,26 @@ class AuthController extends Controller
                 'token_type' => 'Bearer'
             ]);
         } catch (QueryException $exception) {
-            report($exception);
+            $sqlState = (string) ($exception->errorInfo[0] ?? $exception->getCode());
+            $driverCode = (int) ($exception->errorInfo[1] ?? 0);
+            // Avoid logging SQL bindings, credentials or the login payload.
+            Log::error('Login database failure', [
+                'sqlstate' => $sqlState,
+                'driver_code' => $driverCode,
+                'connection' => config('database.default'),
+            ]);
+
+            if ($sqlState === '42S02' || $driverCode === 1146) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'DATABASE_SCHEMA_MISSING',
+                    'message' => 'Une table nécessaire à la connexion est absente. Les migrations de la base doivent être exécutées.',
+                ], 503);
+            }
 
             return response()->json([
                 'status' => 'error',
+                'code' => 'DATABASE_UNAVAILABLE',
                 'message' => 'Base de données momentanément indisponible. Vérifiez la connexion Render vers TiDB Cloud.',
             ], 503);
         }
