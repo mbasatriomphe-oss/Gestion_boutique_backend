@@ -3,6 +3,9 @@ set -eu
 
 cd /var/www/html
 
+# File sessions/cache and compiled views need these directories in a fresh image.
+mkdir -p storage/framework/sessions storage/framework/cache/data storage/framework/views storage/logs bootstrap/cache
+
 # Match the port assigned by the hosting service.
 http_port="${PORT:-80}"
 case "$http_port" in
