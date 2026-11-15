@@ -34,4 +34,8 @@ try {
 # PHP-FPM reads the resolved configuration even if its environment is filtered.
 php artisan config:cache --no-interaction
 
+# Print a credential-free connection diagnosis in Render deploy logs.
+# Keep HTTP available so health checks can run even during a database outage.
+php artisan db:diagnose --no-interaction || echo "Database connection needs attention; see diagnostic above." >&2
+
 exec /start.sh
