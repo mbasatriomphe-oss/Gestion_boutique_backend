@@ -3,6 +3,17 @@ set -eu
 
 cd /var/www/html
 
+# Match the port assigned by the hosting service.
+http_port="${PORT:-80}"
+case "$http_port" in
+    ''|*[!0-9]*) echo "PORT must be a number between 1 and 65535." >&2; exit 1 ;;
+esac
+if [ "$http_port" -lt 1 ] || [ "$http_port" -gt 65535 ]; then
+    echo "PORT must be a number between 1 and 65535." >&2
+    exit 1
+fi
+sed -i -E "s/listen 80;/listen ${http_port};/; s/listen \[::\]:80 default_server;/listen [::]:${http_port} default_server;/" conf/nginx/nginx-site.conf
+
 # Build configuration at runtime, with Render's environment, not at image build.
 php artisan config:clear --no-interaction
 php -r '
