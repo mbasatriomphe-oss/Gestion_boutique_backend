@@ -11,6 +11,38 @@ use Illuminate\Validation\ValidationException;
 
 class AccountController extends Controller
 {
+    public function sessions(Request $request): JsonResponse
+    {
+        $currentToken = $request->user()->currentAccessToken();
+        $currentId = $currentToken instanceof \Laravel\Sanctum\PersonalAccessToken ? $currentToken->getKey() : null;
+        $tokens = $request->user()->tokens()->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))->orderByDesc('created_at')->get([
+            'id', 'name', 'last_used_at', 'created_at', 'expires_at',
+        ])->map(fn ($token) => [
+            'id' => $token->id,
+            'name' => $token->name,
+            'last_used_at' => $token->last_used_at,
+            'created_at' => $token->created_at,
+            'expires_at' => $token->expires_at,
+            'current' => (string) $token->id === (string) $currentId,
+        ]);
+
+        return response()->json(['status' => 'success', 'data' => $tokens]);
+    }
+
+    public function revokeSession(Request $request, int $id): JsonResponse
+    {
+        $request->user()->tokens()->whereKey($id)->firstOrFail()->delete();
+
+        return response()->json(['status' => 'success', 'message' => 'Session révoquée.']);
+    }
+
+    public function logoutAll(Request $request): JsonResponse
+    {
+        $request->user()->tokens()->delete();
+
+        return response()->json(['status' => 'success', 'message' => 'Toutes les sessions ont été fermées.']);
+    }
+
     public function update(Request $request): JsonResponse
     {
         $account = $request->user();

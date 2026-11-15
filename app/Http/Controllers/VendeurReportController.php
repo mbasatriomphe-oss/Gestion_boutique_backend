@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Taux;
+use App\Models\taux as Taux;
 use App\Models\ventes;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;

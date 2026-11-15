@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Taux;
+use App\Models\taux as Taux;
 use App\Models\ventes;
 use App\Models\ligne_ventes;
 use App\Models\caisse;
@@ -30,6 +30,16 @@ class VenteController extends ApiCrudController
 {
     protected string $modelClass = ventes::class;
     protected array $searchable = ['code'];
+
+    public function show(int $id): JsonResponse
+    {
+        $vente = ventes::with([
+            'client', 'vendeur', 'deviseVente', 'lignes.produit',
+            'lignes.unite', 'lignes.devise', 'transactionsCaisses.caisse.devise',
+        ])->findOrFail($id);
+
+        return response()->json(['status' => 'success', 'data' => $vente]);
+    }
 
     protected function ensureVendorUser(): ?JsonResponse
     {
@@ -504,7 +514,9 @@ class VenteController extends ApiCrudController
             'description' => $description,
             'solde_avant' => $this->formatDecimal($soldeAvant),
             'solde_apres' => $this->formatDecimal($soldeApres),
-            'created_by' => $createdBy ?? auth()->user()?->id,
+            // This foreign key references users; seller ids belong to vendeurs.
+            // The seller remains recorded on the referenced sale (id_vendeur).
+            'created_by' => $createdBy ?? (auth()->user() instanceof User ? auth()->id() : null),
         ]);
     }
 

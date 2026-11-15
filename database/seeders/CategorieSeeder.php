@@ -3,7 +3,7 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use App\Models\Categories;  // ← Pluriel: Categories
+use App\Models\categories as Categories;
 
 class CategorieSeeder extends Seeder
 {

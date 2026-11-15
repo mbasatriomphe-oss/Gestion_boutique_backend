@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Taux;
+use App\Models\taux as Taux;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;

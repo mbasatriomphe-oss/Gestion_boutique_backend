@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use App\Models\Taux;
+use App\Models\taux as Taux;
 use App\Models\ventes;
 
 class RapportController extends Controller

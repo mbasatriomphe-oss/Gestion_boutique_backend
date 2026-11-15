@@ -3,7 +3,7 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use App\Models\Unites;  // ← Pluriel: Unites
+use App\Models\unites as Unites;
 
 class UniteSeeder extends Seeder
 {

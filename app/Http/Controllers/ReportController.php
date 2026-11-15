@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use App\Models\Taux;
+use App\Models\taux as Taux;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Symfony\Component\Process\Process;
 

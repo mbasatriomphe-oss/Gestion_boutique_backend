@@ -19,12 +19,12 @@ class devise extends Model
 
     public function tauxSources()
     {
-        return $this->hasMany(Taux::class, 'devise_source');
+        return $this->hasMany(taux::class, 'devise_source');
     }
 
     public function tauxDestinations()
     {
-        return $this->hasMany(Taux::class, 'devise_but');
+        return $this->hasMany(taux::class, 'devise_but');
     }
 
     public function caisses()

@@ -52,11 +52,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
     
     // Déconnexion (nécessite d'être connecté)
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/account/sessions', [\App\Http\Controllers\AccountController::class, 'sessions']);
+    Route::delete('/account/sessions/{id}', [\App\Http\Controllers\AccountController::class, 'revokeSession']);
+    Route::post('/account/logout-all', [\App\Http\Controllers\AccountController::class, 'logoutAll']);
     Route::put('/account/profile', [\App\Http\Controllers\AccountController::class, 'update']);
     
     // Récupérer l'utilisateur connecté
     Route::get('/user', function(Request $request) {
-        return $request->user();
+        return array_merge($request->user()->toArray(), ['role' => $request->user()->role]);
     });
 
 // Public signed routes (no auth) - accessible only with a valid temporary signature
@@ -98,6 +101,7 @@ Route::get('/rapports/ventes/public', [\App\Http\Controllers\ReportController::c
     // ==================== ROUTES ADMIN UNIQUEMENT ====================
     
     Route::middleware(['admin'])->group(function () {
+        Route::apiResource('organizations', \App\Http\Controllers\OrganizationController::class);
         Route::get('/admin/backup/database', [\App\Http\Controllers\DatabaseBackupController::class, 'download'])->name('admin.backup.database');
         Route::get('/admin/backup/database/latest-local', [\App\Http\Controllers\DatabaseBackupController::class, 'downloadLatestLocal'])->name('admin.backup.database.latest-local');
         Route::get('/admin/backup/settings', [\App\Http\Controllers\DatabaseBackupController::class, 'settings'])->name('admin.backup.settings');
