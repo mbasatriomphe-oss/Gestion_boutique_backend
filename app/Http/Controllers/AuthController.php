@@ -123,7 +123,7 @@ class AuthController extends Controller
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Base de données momentanément indisponible. Vérifiez la connexion Render vers Aiven.',
+                'message' => 'Base de données momentanément indisponible. Vérifiez la connexion Render vers TiDB Cloud.',
             ], 503);
         }
     }
