@@ -1,5 +1,7 @@
 FROM richarvey/nginx-php-fpm:latest
 
+WORKDIR /var/www/html
+
 COPY . .
 
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
@@ -8,7 +10,7 @@ RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoload
 ENV SKIP_COMPOSER 1
 ENV WEBROOT /var/www/html/public
 ENV PHP_ERRORS_STDERR 1
-ENV RUN_SCRIPTS 1
+ENV RUN_SCRIPTS 0
 ENV REAL_IP_HEADER 1
 
 # Laravel config
@@ -19,4 +21,4 @@ ENV LOG_CHANNEL stderr
 # Allow composer to run as root
 ENV COMPOSER_ALLOW_SUPERUSER 1
 
-CMD ["/start.sh"]
+CMD ["sh", "/var/www/html/docker/start.sh"]
