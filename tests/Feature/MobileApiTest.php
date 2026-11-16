@@ -33,6 +33,14 @@ class MobileApiTest extends TestCase
         Schema::table('ligne_ventes', function (Blueprint $t) {
             $t->unsignedBigInteger('id_unite')->nullable(); $t->decimal('facteur_conversion', 20, 8)->default(1); $t->decimal('quantite_stock', 20, 8)->nullable();
         });
+        Schema::table('ligne_approvisionnements', function (Blueprint $t) {
+            $t->boolean('paye_par_caisse')->default(false);
+            $t->unsignedBigInteger('id_unite')->nullable();
+            $t->decimal('facteur_conversion', 20, 8)->default(1);
+            $t->decimal('quantite_stock', 20, 8)->nullable();
+            $t->decimal('prix_unitaire_stock', 20, 8)->nullable();
+            $t->decimal('prix_vente_stock', 20, 8)->nullable();
+        });
         (require database_path('migrations/2026_09_29_000002_add_product_setup_pricing_and_opening_stock.php'))->up();
         DB::statement("CREATE VIEW v_stock_disponible AS SELECT p.id, p.code, p.nom, COALESCE((SELECT SUM(l.quantite_initial) FROM lots l WHERE l.id_produit = p.id), 0) - COALESCE((SELECT SUM(m.quantite) FROM mouvements_stock_fifos m JOIN lots l ON l.id = m.id_lot WHERE l.id_produit = p.id AND m.type_mouvement = 'sortie'), 0) AS stock_actuel FROM produits p");
     }
@@ -117,6 +125,47 @@ class MobileApiTest extends TestCase
         $this->putJson('/api/clients/'.$counter, ['nom' => 'Autre nom'])->assertUnprocessable();
         $this->deleteJson('/api/clients/'.$counter)->assertUnprocessable();
         $this->assertDatabaseHas('clients', ['id' => $counter, 'nom' => 'Client comptoir']);
+    }
+
+    public function test_purchase_details_update_stock_prices_currency_and_cash_atomically(): void
+    {
+        $admin = $this->admin();
+        $usd = $this->postJson('/api/devises', ['code' => 'USD', 'nom' => 'Dollar', 'symbole' => '$'])->json('data.id');
+        $cdf = $this->postJson('/api/devises', ['code' => 'CDF', 'nom' => 'Franc', 'symbole' => 'FC'])->json('data.id');
+        $unit = $this->postJson('/api/unites', ['nom' => 'Pièce', 'symbole' => 'pc'])->json('data.id');
+        $category = $this->postJson('/api/categories', ['nom' => 'Épicerie'])->json('data.id');
+        $supplier = $this->postJson('/api/fournisseurs', ['nom' => 'Fournisseur test', 'adresse' => 'Rue test', 'ville' => 'Lubumbashi', 'pays' => 'RDC', 'contact' => '+243000000000'])->assertCreated()->json('data.id');
+        $product = $this->postJson('/api/produits', ['nom' => 'Produit réception', 'unite_id' => $unit, 'categorie_id' => $category,
+            'unite_achat_id' => $unit, 'prix_achat' => 2, 'devise_achat_id' => $usd,
+            'unites_vente' => [['id_unite' => $unit, 'facteur' => 1, 'prix' => 5, 'id_devise' => $usd]],
+        ])->assertCreated()->json('data.id');
+        DB::table('caisses')->insert([['id_devise' => $usd, 'solde' => 100], ['id_devise' => $cdf, 'solde' => 1000]]);
+        $purchase = $this->postJson('/api/approvisionnements', ['date' => now()->toDateString(), 'id_user' => $admin->id, 'id_fournisseur' => $supplier,
+            'lignes' => [['id_produit' => $product, 'id_unite' => $unit, 'quantite' => 10, 'prix_unitaire' => 2, 'prix_vente' => 5, 'id_devise' => $usd, 'paye_par_caisse' => true]],
+        ])->assertCreated()->json('data');
+        $line = $purchase['lignes'][0]['id'];
+        $lot = DB::table('lots')->where('id_ligne_approvisionnement', $line)->value('id');
+        // SQLite has no purchase cash trigger; start at the real post-purchase balance.
+        DB::table('caisses')->where('id_devise', $usd)->update(['solde' => 80]);
+        $updates = ['id' => $line, 'quantite' => 12, 'prix_unitaire' => 3, 'prix_vente' => 7, 'id_devise' => $cdf];
+        $this->putJson('/api/approvisionnements/'.$purchase['id'], ['lignes' => [$updates]])->assertOk();
+        $this->assertDatabaseHas('lots', ['id' => $lot, 'quantite_initial' => 12, 'id_devise' => $cdf, 'prix_unitaire_stock' => 3]);
+        $this->assertDatabaseHas('ligne_approvisionnements', ['id' => $line, 'prix_vente_stock' => 7, 'quantite_stock' => 12]);
+        $this->assertEquals(100, DB::table('caisses')->where('id_devise', $usd)->value('solde'));
+        $this->assertEquals(964, DB::table('caisses')->where('id_devise', $cdf)->value('solde'));
+        $this->assertDatabaseHas('mouvements_stock_fifos', ['id_lot' => $lot, 'type_mouvement' => 'entree', 'quantite' => 12]);
+        // Re-saving unchanged lines must never debit cash a second time.
+        $this->putJson('/api/approvisionnements/'.$purchase['id'], ['lignes' => [$updates]])->assertOk();
+        $this->assertEquals(964, DB::table('caisses')->where('id_devise', $cdf)->value('solde'));
+        $updates['prix_unitaire'] = 200;
+        $this->putJson('/api/approvisionnements/'.$purchase['id'], ['lignes' => [$updates]])->assertUnprocessable();
+        $this->assertDatabaseHas('ligne_approvisionnements', ['id' => $line, 'prix_unitaire' => 3]);
+        $this->assertEquals(964, DB::table('caisses')->where('id_devise', $cdf)->value('solde'));
+        DB::table('mouvements_stock_fifos')->insert(['id_lot' => $lot, 'type_mouvement' => 'sortie', 'quantite' => 1, 'quantite_restante_avant' => 12, 'quantite_restante_apres' => 11, 'date_mouvement' => now()->toDateString()]);
+        $this->putJson('/api/approvisionnements/'.$purchase['id'], ['lignes' => [$updates]])->assertUnprocessable();
+        $this->putJson('/api/lignes-approvisionnements/'.$line, ['prix_vente' => 9])->assertOk();
+        $this->assertDatabaseHas('ligne_approvisionnements', ['id' => $line, 'prix_vente_stock' => 9]);
+        $this->putJson('/api/lignes-approvisionnements/'.$line, ['id_devise' => $usd])->assertUnprocessable();
     }
 
     public function test_sale_updates_stock_cash_and_rejects_insufficient_stock(): void

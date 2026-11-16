@@ -56,32 +56,10 @@ class LigneApprovisionnementController extends ApiCrudController
      */
     public function update(Request $request, int $id): JsonResponse
     {
-        $ligne = ligne_approvisionnements::with(['produit', 'devise', 'lots'])->findOrFail($id);
-        
-        $rules = $this->updateRules($ligne);
-        $validated = $request->validate($rules);
-        
-        // Si la devise est modifiée, on met à jour aussi les lots
-        $isDeviseChanged = isset($validated['id_devise']) && $validated['id_devise'] != $ligne->id_devise;
-        
-        DB::transaction(function () use ($ligne, $validated, $isDeviseChanged) {
-            // Mettre à jour la ligne d'approvisionnement
-            $ligne->update($validated);
-            
-            // Si la devise a changée, mettre à jour tous les lots associés
-            if ($isDeviseChanged) {
-                lots::where('id_ligne_approvisionnement', $ligne->id)
-                    ->update([
-                        'id_devise' => $validated['id_devise']
-                    ]);
-            }
-        });
-        
-        return response()->json([
-            'status' => 'success',
-            'data' => $ligne->fresh(['produit', 'devise', 'lots', 'approvisionnement']),
-            'message' => $isDeviseChanged ? 'Devise mise à jour avec succès' : 'Ligne mise à jour avec succès'
-        ]);
+        $ligne = ligne_approvisionnements::findOrFail($id);
+        $validated = $request->validate($this->updateRules($ligne));
+        $updated = app(\App\Services\PurchaseLineEditor::class)->update($id, $validated);
+        return response()->json(['status' => 'success', 'data' => $updated, 'message' => 'Ligne mise à jour avec succès']);
     }
 
     /**
@@ -94,26 +72,8 @@ class LigneApprovisionnementController extends ApiCrudController
             'id_devise' => 'required|integer|exists:devises,id',
         ]);
 
-        $ligne = ligne_approvisionnements::with(['produit', 'devise', 'lots'])->findOrFail($id);
-
-        DB::transaction(function () use ($ligne, $validated) {
-            // Mettre à jour la ligne d'approvisionnement
-            $ligne->update([
-                'id_devise' => $validated['id_devise']
-            ]);
-            
-            // Mettre à jour tous les lots associés à cette ligne
-            lots::where('id_ligne_approvisionnement', $ligne->id)
-                ->update([
-                    'id_devise' => $validated['id_devise']
-                ]);
-        });
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $ligne->fresh(['produit', 'devise', 'lots']),
-            'message' => 'Devise mise à jour avec succès'
-        ]);
+        $updated = app(\App\Services\PurchaseLineEditor::class)->update($id, $validated);
+        return response()->json(['status' => 'success', 'data' => $updated]);
     }
 
     /**
@@ -132,20 +92,7 @@ class LigneApprovisionnementController extends ApiCrudController
         
         DB::transaction(function () use ($validated, &$results) {
             foreach ($validated['updates'] as $update) {
-                $ligne = ligne_approvisionnements::findOrFail($update['id']);
-                
-                // Mettre à jour la ligne
-                $ligne->update([
-                    'id_devise' => $update['id_devise']
-                ]);
-                
-                // Mettre à jour les lots associés
-                lots::where('id_ligne_approvisionnement', $ligne->id)
-                    ->update([
-                        'id_devise' => $update['id_devise']
-                    ]);
-                
-                $results[] = $ligne->fresh(['produit', 'devise']);
+                $results[] = app(\App\Services\PurchaseLineEditor::class)->update((int) $update['id'], ['id_devise' => $update['id_devise']]);
             }
         });
 

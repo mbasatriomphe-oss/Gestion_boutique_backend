@@ -23,7 +23,7 @@ class ApprovisionnementController extends ApiCrudController
 
     protected function indexQuery(Request $request): Builder
     {
-        $query = approvisionnements::with(['fournisseur', 'user', 'lignes.produit.unite', 'lignes.unite', 'lignes.lots']);
+        $query = approvisionnements::with(['fournisseur', 'user', 'lignes.produit.unite', 'lignes.unite', 'lignes.devise', 'lignes.lots']);
 
         if ($request->filled('id_fournisseur')) {
             $query->where('id_fournisseur', $request->integer('id_fournisseur'));
@@ -65,6 +65,12 @@ class ApprovisionnementController extends ApiCrudController
             'date' => 'sometimes|date',
             'id_user' => 'sometimes|integer|exists:users,id',
             'id_fournisseur' => 'sometimes|integer|exists:fournisseurs,id',
+            'lignes' => 'sometimes|array|min:1',
+            'lignes.*.id' => 'required|integer|distinct|exists:ligne_approvisionnements,id',
+            'lignes.*.quantite' => 'required|numeric|gt:0',
+            'lignes.*.prix_unitaire' => 'required|numeric|min:0',
+            'lignes.*.prix_vente' => 'nullable|numeric|min:0',
+            'lignes.*.id_devise' => 'required|integer|exists:devises,id',
         ];
     }
 
@@ -216,14 +222,24 @@ class ApprovisionnementController extends ApiCrudController
         $approvisionnement = approvisionnements::findOrFail($id);
         $validated = $request->validate($this->updateRules($approvisionnement));
 
-        if (array_key_exists('date', $validated) && $validated['date'] !== now()->toDateString()) {
+        if (array_key_exists('date', $validated) && $validated['date'] !== $approvisionnement->date->toDateString() && $validated['date'] !== now()->toDateString()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'La date d\'un approvisionnement doit être celle du jour.',
             ], 422);
         }
 
-        $approvisionnement->update($validated);
+        DB::transaction(function () use ($approvisionnement, $validated): void {
+            $updates = $validated['lignes'] ?? [];
+            unset($validated['lignes']);
+            foreach ($updates as $update) {
+                if (!$approvisionnement->lignes()->whereKey($update['id'])->exists()) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['lignes' => 'Une ligne ne correspond pas à cet approvisionnement.']);
+                }
+                app(\App\Services\PurchaseLineEditor::class)->update((int) $update['id'], $update);
+            }
+            $approvisionnement->update($validated);
+        });
 
         return response()->json([
             'status' => 'success',

@@ -14,7 +14,7 @@ class LotController extends ApiCrudController
 
     protected function indexQuery(Request $request): Builder
     {
-        $query = lots::with(['produit.unite', 'approvisionnement.fournisseur', 'ligneApprovisionnement.unite', 'devise']);
+        $query = lots::with(['produit.unite', 'approvisionnement.fournisseur', 'ligneApprovisionnement.unite', 'ligneApprovisionnement.devise', 'devise']);
 
         if ($request->filled('id_produit')) {
             $query->where('id_produit', $request->integer('id_produit'));
