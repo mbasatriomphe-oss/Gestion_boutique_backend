@@ -7,12 +7,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_vente');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_vente');
     }
 
     public function down(): void
     {
-        DB::unprepared('
+        \App\Support\DatabaseTriggers::unprepared('
             CREATE TRIGGER update_caisse_after_vente
             AFTER INSERT ON ligne_ventes
             FOR EACH ROW

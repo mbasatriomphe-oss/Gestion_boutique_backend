@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         // Trigger après insertion d'une vente pour créditer la caisse
-        DB::unprepared('
+        \App\Support\DatabaseTriggers::unprepared('
             CREATE TRIGGER update_caisse_after_vente
             AFTER INSERT ON ligne_ventes
             FOR EACH ROW
@@ -48,7 +48,7 @@ return new class extends Migration
         // après que la colonne soit ajoutée par la migration 2026_07_03_000000_add_paye_par_caisse_to_ligne_approvisionnements.php.
         
         // Trigger après insertion d'un retour pour débiter la caisse
-        DB::unprepared('
+        \App\Support\DatabaseTriggers::unprepared('
             CREATE TRIGGER update_caisse_after_retour
             AFTER INSERT ON ligne_retours
             FOR EACH ROW
@@ -82,8 +82,8 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_vente');
-        DB::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_approvisionnement');
-        DB::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_retour');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_vente');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_approvisionnement');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_retour');
     }
 };

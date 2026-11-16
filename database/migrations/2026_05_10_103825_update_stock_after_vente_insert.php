@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         // Trigger après insertion d'une ligne de vente
-        DB::unprepared('
+        \App\Support\DatabaseTriggers::unprepared('
             CREATE TRIGGER update_stock_after_vente_insert
             AFTER INSERT ON ligne_ventes
             FOR EACH ROW
@@ -86,6 +86,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::unprepared('DROP TRIGGER IF EXISTS update_stock_after_vente_insert');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS update_stock_after_vente_insert');
     }
 };

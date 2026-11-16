@@ -7,9 +7,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_approvisionnement');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_approvisionnement');
 
-        DB::unprepared('
+        \App\Support\DatabaseTriggers::unprepared('
             CREATE TRIGGER update_caisse_after_approvisionnement
             AFTER INSERT ON ligne_approvisionnements
             FOR EACH ROW
@@ -51,6 +51,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_approvisionnement');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS update_caisse_after_approvisionnement');
     }
 };

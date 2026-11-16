@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         // Trigger AFTER INSERT sur devises
-        DB::unprepared('
+        \App\Support\DatabaseTriggers::unprepared('
             CREATE TRIGGER create_caisse_after_devise_insert
             AFTER INSERT ON devises
             FOR EACH ROW
@@ -23,6 +23,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::unprepared('DROP TRIGGER IF EXISTS create_caisse_after_devise_insert');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS create_caisse_after_devise_insert');
     }
 };

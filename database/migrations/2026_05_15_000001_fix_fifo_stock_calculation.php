@@ -7,9 +7,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::unprepared('DROP TRIGGER IF EXISTS update_stock_after_vente_insert');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS update_stock_after_vente_insert');
 
-        DB::unprepared('
+        \App\Support\DatabaseTriggers::unprepared('
             CREATE TRIGGER update_stock_after_vente_insert
             AFTER INSERT ON ligne_ventes
             FOR EACH ROW
@@ -134,6 +134,6 @@ return new class extends Migration
     {
         DB::statement('DROP VIEW IF EXISTS v_lots_expiration');
         DB::statement('DROP VIEW IF EXISTS v_stock_disponible');
-        DB::unprepared('DROP TRIGGER IF EXISTS update_stock_after_vente_insert');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS update_stock_after_vente_insert');
     }
 };

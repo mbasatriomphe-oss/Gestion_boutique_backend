@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         // Trigger après insertion d'une ligne d'approvisionnement
-        DB::unprepared('
+        \App\Support\DatabaseTriggers::unprepared('
             CREATE TRIGGER create_lot_after_approvisionnement
             AFTER INSERT ON ligne_approvisionnements
             FOR EACH ROW
@@ -58,6 +58,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::unprepared('DROP TRIGGER IF EXISTS create_lot_after_approvisionnement');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS create_lot_after_approvisionnement');
     }
 };

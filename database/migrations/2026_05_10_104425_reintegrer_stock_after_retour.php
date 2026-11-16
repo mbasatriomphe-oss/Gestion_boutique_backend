@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         // Trigger après insertion d'un retour
-        DB::unprepared('
+        \App\Support\DatabaseTriggers::unprepared('
             CREATE TRIGGER reintegrer_stock_after_retour
             AFTER INSERT ON ligne_retours
             FOR EACH ROW
@@ -57,6 +57,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::unprepared('DROP TRIGGER IF EXISTS reintegrer_stock_after_retour');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS reintegrer_stock_after_retour');
     }
 };

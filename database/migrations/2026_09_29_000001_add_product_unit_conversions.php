@@ -81,8 +81,8 @@ return new class extends Migration
             }
         });
 
-        DB::unprepared('DROP TRIGGER IF EXISTS update_stock_after_vente_insert');
-        DB::unprepared('DROP TRIGGER IF EXISTS create_lot_after_approvisionnement');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS update_stock_after_vente_insert');
+        \App\Support\DatabaseTriggers::unprepared('DROP TRIGGER IF EXISTS create_lot_after_approvisionnement');
     }
 
     public function down(): void
