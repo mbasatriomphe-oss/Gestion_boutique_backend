@@ -23,7 +23,7 @@ class MobileApiTest extends TestCase
         // Real table migrations, excluding the MySQL-specific triggers and views.
         $patterns = ['0001_01_01_000000*', '2026_05_06*', '2026_05_07*', '2026_05_08*', '2026_05_09*',
             '2026_05_10_061706*', '2026_05_10_091845*', '2026_05_10_104854*', '2026_05_10_145214*',
-            '2026_05_14*', '2026_06_01*', '2026_07_07_000001*', '2026_10_07*', '2026_11_14*'];
+            '2026_05_14*', '2026_06_01*', '2026_07_07_000001*', '2026_10_07*', '2026_11_14*', '2026_11_16*'];
         foreach ($patterns as $pattern) foreach (glob(database_path('migrations/' . $pattern . '.php')) as $file) (require $file)->up();
         Schema::create('produit_unites', function (Blueprint $t) {
             $t->id(); $t->foreignId('id_produit')->constrained('produits'); $t->foreignId('id_unite')->constrained('unites');
@@ -96,7 +96,7 @@ class MobileApiTest extends TestCase
     {
         $this->admin();
         for ($i = 0; $i < 23; $i++) $this->postJson('/api/clients', ['nom' => 'Client ' . $i])->assertCreated();
-        $this->getJson('/api/clients?per_page=all')->assertOk()->assertJsonCount(23, 'data');
+        $this->getJson('/api/clients?per_page=all')->assertOk()->assertJsonCount(24, 'data');
         $this->getJson('/api/clients?search=Client%2022')->assertOk()->assertJsonCount(1, 'data');
     }
 
@@ -108,6 +108,15 @@ class MobileApiTest extends TestCase
         $this->postJson('/api/taux', ['devise_source' => $usd, 'devise_but' => $cdf, 'valeur' => 2800, 'date_effet' => '2026-01-01', 'statut' => 'actif', 'avec_inverse' => true])->assertCreated();
         $response = $this->getJson('/api/taux/actif?devise_source=' . $usd . '&devise_but=' . $cdf . '&date=2026-11-14')->assertOk();
         $this->assertEquals(2800, (float) $response->json('data.valeur'));
+    }
+
+    public function test_counter_customer_cannot_be_edited_or_deleted(): void
+    {
+        $this->admin();
+        $counter = DB::table('clients')->where('system_key', 'counter')->value('id');
+        $this->putJson('/api/clients/'.$counter, ['nom' => 'Autre nom'])->assertUnprocessable();
+        $this->deleteJson('/api/clients/'.$counter)->assertUnprocessable();
+        $this->assertDatabaseHas('clients', ['id' => $counter, 'nom' => 'Client comptoir']);
     }
 
     public function test_sale_updates_stock_cash_and_rejects_insufficient_stock(): void
@@ -128,7 +137,10 @@ class MobileApiTest extends TestCase
             'type_paiement' => 'total', 'mode_paiement' => 'cash', 'paiements' => [['devise_id' => $usd, 'montant' => 10]],
             'lignes' => [['id_produit' => $product, 'id_unite' => $unit, 'quantite' => 2, 'prix_vente' => 5, 'id_devise' => $usd]],
         ];
+        $payload['id_client'] = null;
         $saleId = $this->postJson('/api/ventes', $payload)->assertCreated()->json('data.id');
+        $counter = DB::table('clients')->where('system_key', 'counter')->value('id');
+        $this->assertDatabaseHas('ventes', ['id' => $saleId, 'id_client' => $counter]);
         $this->assertEquals(8, (float) DB::table('v_stock_disponible')->where('id', $product)->value('stock_actuel'));
         $this->assertEquals(10, (float) DB::table('caisses')->where('id_devise', $usd)->value('solde'));
         $payload['lignes'][0]['quantite'] = 100;
@@ -142,7 +154,16 @@ class MobileApiTest extends TestCase
         // The same persisted sale supports a later advance and final debt settlement.
         $payload['lignes'][0]['quantite'] = 2;
         $payload['type_paiement'] = 'credit'; $payload['paiements'] = [];
+        $this->postJson('/api/ventes', $payload)->assertUnprocessable()->assertJsonValidationErrors('id_client');
+        $payload['id_client'] = $counter;
+        $this->postJson('/api/ventes', $payload)->assertUnprocessable()->assertJsonValidationErrors('id_client');
+        $payload['type_paiement'] = 'avance'; $payload['paiements'] = [['devise_id' => $usd, 'montant' => 4]];
+        $payload['id_client'] = null;
+        $this->postJson('/api/ventes', $payload)->assertUnprocessable()->assertJsonValidationErrors('id_client');
+        $payload['type_paiement'] = 'credit'; $payload['paiements'] = [];
+        $payload['id_client'] = $client;
         $creditId = $this->postJson('/api/ventes', $payload)->assertCreated()->json('data.id');
+        $this->putJson('/api/ventes/'.$creditId, ['id_client' => $counter])->assertUnprocessable()->assertJsonValidationErrors('id_client');
         $this->postJson('/api/ventes/' . $creditId . '/paiements', ['paiements' => [['devise_id' => $usd, 'montant' => 4]]])->assertOk();
         $this->assertEquals(6, (float) DB::table('ventes')->where('id', $creditId)->value('reste_a_payer'));
         $this->postJson('/api/ventes/' . $creditId . '/paiements', ['paiements' => [['devise_id' => $usd, 'montant' => 6]]])->assertOk();

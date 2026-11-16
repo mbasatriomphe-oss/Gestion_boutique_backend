@@ -217,6 +217,16 @@ class VenteController extends ApiCrudController
             $remaining = BigDecimal::of($paymentSummary['reste_a_payer']);
             $total = BigDecimal::of($paymentSummary['montant_total']);
 
+            $client = !empty($validated['id_client'])
+                ? \App\Models\clients::findOrFail($validated['id_client'])
+                : null;
+            if ($remaining->isGreaterThan(BigDecimal::of('0')) && (!$client || $client->system_key === 'counter')) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'id_client' => 'Choisissez un client identifié pour une vente à crédit ou avec avance.',
+                ]);
+            }
+            $client ??= \App\Models\clients::firstOrCreate(['system_key' => 'counter'], ['nom' => 'Client comptoir']);
+
             if (
                 ($paymentType === 'credit' && ($payments !== [] || ! $remaining->isGreaterThan(BigDecimal::of('0'))))
                 || ($paymentType === 'avance' && (! $paid->isGreaterThan(BigDecimal::of('0')) || ! $remaining->isGreaterThan(BigDecimal::of('0'))))
@@ -235,7 +245,7 @@ class VenteController extends ApiCrudController
                 'code'       => $code,
                 'date'       => $validated['date'],
                 'id_vendeur' => (int) $validated['id_vendeur'],
-                'id_client'  => (int) $validated['id_client'],
+                'id_client'  => (int) $client->id,
                 'devise_vente_id' => $paymentSummary['devise_vente_id'],
                 'montant_total' => $paymentSummary['montant_total'],
                 'montant_paye' => $paymentSummary['montant_paye'],
@@ -456,7 +466,7 @@ class VenteController extends ApiCrudController
             'code'                    => 'sometimes|string|max:50|unique:ventes,code',
             'date'                    => 'required|date',
             'id_vendeur'              => 'required|integer|exists:vendeurs,id',
-            'id_client'               => 'required|integer|exists:clients,id',
+            'id_client'               => 'nullable|integer|exists:clients,id',
             'devise_vente_id'         => 'nullable|integer|exists:devises,id',
             'type_paiement'           => 'sometimes|string|in:total,avance,credit',
             'mode_paiement'           => 'sometimes|string|in:cash,card',
@@ -635,6 +645,12 @@ class VenteController extends ApiCrudController
 
         $vente     = ventes::findOrFail($id);
         $validated = $request->validate($this->updateRules($vente));
+        if (isset($validated['id_client']) && BigDecimal::of((string) $vente->reste_a_payer)->isGreaterThan('0')
+            && \App\Models\clients::findOrFail($validated['id_client'])->system_key === 'counter') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'id_client' => 'Un crédit doit rester associé à un client identifié.',
+            ]);
+        }
         $vente->update($validated);
 
         $freshVente = $vente->fresh(['client', 'vendeur', 'deviseVente', 'lignes.produit', 'lignes.unite', 'lignes.devise', 'transactionsCaisses.caisse.devise']);

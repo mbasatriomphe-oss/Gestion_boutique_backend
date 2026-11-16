@@ -11,6 +11,24 @@ use Illuminate\Http\Request;
 class ClientController extends ApiCrudController
 {
     protected string $modelClass = clients::class;
+
+    public function destroy(int $id): JsonResponse
+    {
+        if (clients::findOrFail($id)->system_key === 'counter') {
+            return response()->json(['message' => 'Le client comptoir est conservé par le système.'], 422);
+        }
+
+        return parent::destroy($id);
+    }
+
+    public function update(Request $request, int $id): JsonResponse
+    {
+        if (clients::findOrFail($id)->system_key === 'counter') {
+            return response()->json(['message' => 'Le client comptoir est géré par le système.'], 422);
+        }
+
+        return parent::update($request, $id);
+    }
     protected array $searchable = ['nom', 'post_nom', 'prenom', 'contact', 'email', 'ville'];
 
     protected function indexQuery(Request $request): Builder

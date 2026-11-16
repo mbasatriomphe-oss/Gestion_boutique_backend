@@ -35,12 +35,12 @@ class AdminUserSeeder extends Seeder
         User::updateOrCreate(
             ['email' => 'user@belden.com'],
             [
-                'nom' => 'Utilisateur',
-                'post_nom' => 'Test',
-                'prenom' => 'Simple',
-                'email' => 'user@belden.com',
+                'nom' => 'belden',
+                'post_nom' => 'mukigi',
+                'prenom' => 'belden',
+                'email' => 'beldenmukingi@gmail.com',
                 'email_verified_at' => now(),
-                'password' => Hash::make('User@123456'),
+                'password' => Hash::make('admin1234'),
                 'role' => 'user',
                 'remember_token' => null,
                 'created_at' => now(),

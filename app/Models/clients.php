@@ -12,6 +12,7 @@ class clients extends Model
     protected $table = 'clients';
 
     protected $fillable = [
+        'system_key',
         'nom',
         'post_nom',
         'prenom',
