@@ -453,8 +453,8 @@ class VenteController extends ApiCrudController
             return 'Vous ne pouvez annuler que vos propres ventes.';
         }
 
-        if (! $vente->created_at || $vente->created_at->diffInMinutes(now()) > 60) {
-            return 'Une vente ne peut être annulée que dans l\'heure qui suit sa création.';
+        if (! $vente->created_at || $vente->created_at->isFuture() || now()->greaterThanOrEqualTo($vente->created_at->copy()->addHours(24))) {
+            return 'Un vendeur ne peut annuler sa vente que dans les 24 heures suivant sa création.';
         }
 
         return null;
@@ -769,17 +769,15 @@ class VenteController extends ApiCrudController
     public function destroy(int $id): JsonResponse
     {
         try {
-            $vente = ventes::with(['lignes', 'retours', 'vendeur'])->findOrFail($id);
-
-            if ($reason = $this->cancellationBlockedReason($vente)) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => $reason,
-                ], 422);
-            }
-
-            $vente = DB::transaction(function () use ($vente) {
-                /** @var ventes $vente */
+            $vente = DB::transaction(function () use ($id) {
+                $vente = ventes::query()->lockForUpdate()->findOrFail($id);
+                if ($reason = $this->cancellationBlockedReason($vente)) {
+                    throw new \RuntimeException($reason);
+                }
+                if ($vente->paiement_en_ligne) {
+                    throw new \RuntimeException('L’annulation des ventes payées en ligne n’est pas disponible : le remboursement auprès du prestataire n’est pas pris en charge.');
+                }
+                $vente->load(['lignes', 'vendeur']);
                 if ($vente->retours()->exists()) {
                     throw new \RuntimeException('Cette vente contient déjà un retour et ne peut pas être annulée.');
                 }
@@ -813,6 +811,8 @@ class VenteController extends ApiCrudController
                 }
 
                 if ($lineIds !== []) {
+                    $lotIds = mouvements_stock_fifos::query()->whereIn('id_ligne_vente', $lineIds)->pluck('id_lot')->unique()->sort()->values();
+                    lots::query()->whereIn('id', $lotIds)->orderBy('id')->lockForUpdate()->get();
                     DB::table('mouvements_stock_fifos')
                         ->whereIn('id_ligne_vente', $lineIds)
                         ->delete();

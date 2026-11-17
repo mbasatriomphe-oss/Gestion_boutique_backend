@@ -246,6 +246,16 @@ class MobileApiTest extends TestCase
         $this->postJson('/api/ventes', $payload)->assertUnprocessable();
         $this->assertDatabaseCount('ventes', 1);
         $this->assertEquals(10, (float) DB::table('caisses')->where('id_devise', $usd)->value('solde'));
+        $otherSeller = new vendeurs(['nom' => 'Autre', 'prenom' => 'Vendeur', 'code' => 'V-21', 'email' => 'other-seller@example.test', 'password' => Hash::make('password')]);
+        $otherSeller->save();
+        Sanctum::actingAs($otherSeller);
+        $this->deleteJson('/api/ventes/' . $saleId)->assertUnprocessable();
+        Sanctum::actingAs($seller);
+        DB::table('ventes')->where('id', $saleId)->update(['created_at' => now()->subHours(24)]);
+        $this->deleteJson('/api/ventes/' . $saleId)->assertUnprocessable();
+        $this->assertEquals(8, (float) DB::table('v_stock_disponible')->where('id', $product)->value('stock_actuel'));
+        $this->assertEquals(10, (float) DB::table('caisses')->where('id_devise', $usd)->value('solde'));
+        DB::table('ventes')->where('id', $saleId)->update(['created_at' => now()->subHours(23)]);
         $this->deleteJson('/api/ventes/' . $saleId)->assertOk();
         $this->assertDatabaseCount('ventes', 0);
         $this->assertEquals(10, (float) DB::table('v_stock_disponible')->where('id', $product)->value('stock_actuel'));
@@ -269,5 +279,11 @@ class MobileApiTest extends TestCase
         $this->assertEquals(0, (float) DB::table('ventes')->where('id', $creditId)->value('reste_a_payer'));
         $this->assertEquals(10, (float) DB::table('caisses')->where('id_devise', $usd)->value('solde'));
         $this->getJson('/api/ventes/' . $creditId)->assertOk()->assertJsonPath('data.lignes.0.produit.nom', 'Produit test');
+        DB::table('ventes')->where('id', $creditId)->update(['created_at' => now()->subHours(100)]);
+        Sanctum::actingAs(User::where('role', 'admin')->firstOrFail());
+        $this->deleteJson('/api/ventes/' . $creditId)->assertOk();
+        $this->assertEquals(10, (float) DB::table('v_stock_disponible')->where('id', $product)->value('stock_actuel'));
+        $this->assertEquals(0, (float) DB::table('caisses')->where('id_devise', $usd)->value('solde'));
+        $this->assertDatabaseMissing('transactions_caisses', ['reference_type' => 'vente', 'reference_id' => $creditId]);
     }
 }
