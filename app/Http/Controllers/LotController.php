@@ -14,7 +14,18 @@ class LotController extends ApiCrudController
 
     protected function indexQuery(Request $request): Builder
     {
-        $query = lots::with(['produit.unite', 'approvisionnement.fournisseur', 'ligneApprovisionnement.unite', 'ligneApprovisionnement.devise', 'devise']);
+        if ($request->boolean('latest_per_product')) {
+            // POS needs the newest pricing per product, never the entire lot history.
+            $query = lots::query()
+                ->select(['id', 'id_produit', 'id_devise', 'id_ligne_approvisionnement'])
+                ->whereIn('id', lots::query()->selectRaw('MAX(id)')->groupBy('id_produit'))
+                ->with([
+                    'ligneApprovisionnement:id,prix_vente,prix_unitaire,prix_vente_stock,prix_unitaire_stock,facteur_conversion',
+                    'devise:id,code,nom,symbole',
+                ]);
+        } else {
+            $query = lots::with(['produit.unite', 'approvisionnement.fournisseur', 'ligneApprovisionnement.unite', 'ligneApprovisionnement.devise', 'devise']);
+        }
 
         if ($request->filled('id_produit')) {
             $query->where('id_produit', $request->integer('id_produit'));

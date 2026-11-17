@@ -22,7 +22,11 @@ class ProduitController extends ApiCrudController
 
     protected function indexQuery(Request $request): Builder
     {
-        $query = produits::with(['unite', 'categorie', 'unitesAchat', 'unitesVente']);
+        $query = $request->boolean('pos')
+            ? produits::query()
+                ->select(['id', 'code', 'nom', 'photo', 'unite_id', 'categorie_id'])
+                ->with(['unite:id,nom,symbole', 'categorie:id,nom', 'unitesVente'])
+            : produits::with(['unite', 'categorie', 'unitesAchat', 'unitesVente']);
 
         if ($request->filled('categorie_id')) {
             $query->where('categorie_id', $request->integer('categorie_id'));

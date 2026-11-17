@@ -168,6 +168,56 @@ class MobileApiTest extends TestCase
         $this->putJson('/api/lignes-approvisionnements/'.$line, ['id_devise' => $usd])->assertUnprocessable();
     }
 
+    public function test_pos_reads_only_latest_lot_and_sale_configuration_without_changing_admin_lists(): void
+    {
+        $admin = $this->admin();
+        $usd = $this->postJson('/api/devises', ['code' => 'USD', 'nom' => 'Dollar', 'symbole' => '$'])->assertCreated()->json('data.id');
+        $unit = $this->postJson('/api/unites', ['nom' => 'Pièce', 'symbole' => 'pc'])->assertCreated()->json('data.id');
+        $category = $this->postJson('/api/categories', ['nom' => 'Épicerie'])->assertCreated()->json('data.id');
+        $product = $this->postJson('/api/produits', [
+            'nom' => 'Produit POS', 'unite_id' => $unit, 'categorie_id' => $category,
+            'unite_achat_id' => $unit, 'prix_achat' => 2, 'devise_achat_id' => $usd,
+            'unites_vente' => [['id_unite' => $unit, 'facteur' => 1, 'prix' => 5, 'id_devise' => $usd]],
+        ])->assertCreated()->json('data.id');
+        $supplier = $this->postJson('/api/fournisseurs', ['nom' => 'Fournisseur POS', 'adresse' => 'Rue test', 'ville' => 'Lubumbashi', 'pays' => 'RDC', 'contact' => '+243000000000'])->assertCreated()->json('data.id');
+        $this->postJson('/api/approvisionnements', [
+            'date' => now()->toDateString(), 'id_user' => $admin->id, 'id_fournisseur' => $supplier,
+            'lignes' => [['id_produit' => $product, 'id_unite' => $unit, 'quantite' => 10, 'prix_unitaire' => 2, 'prix_vente' => 5, 'id_devise' => $usd]],
+        ])->assertCreated();
+        $oldLot = DB::table('lots')->where('id_produit', $product)->first();
+        $duplicate = (array) $oldLot;
+        unset($duplicate['id']);
+        $duplicate['numero_lot'] = 'LOT-NEW-POS';
+        $newId = DB::table('lots')->insertGetId($duplicate);
+
+        $this->seller();
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $compact = $this->getJson('/api/lots?per_page=all&latest_per_product=1')
+            ->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $newId)
+            ->assertJsonPath('data.0.id_produit', $product)
+            ->assertJsonPath('data.0.devise.code', 'USD')
+            ->assertJsonStructure(['data' => [['ligne_approvisionnement' => ['prix_unitaire_stock', 'prix_vente_stock', 'facteur_conversion']]]])
+            ->assertJsonMissingPath('data.0.approvisionnement');
+        $compactQueries = count(DB::getQueryLog());
+        DB::flushQueryLog();
+        $full = $this->getJson('/api/lots?per_page=all')->assertOk()->assertJsonCount(2, 'data')
+            ->assertJsonStructure(['data' => [['approvisionnement', 'produit']]]);
+        $fullQueries = count(DB::getQueryLog());
+        DB::disableQueryLog();
+        $this->assertLessThan($fullQueries, $compactQueries);
+        $this->assertLessThan(strlen($full->getContent()), strlen($compact->getContent()));
+        $this->getJson('/api/produits?per_page=all&pos=1')->assertOk()
+            ->assertJsonPath('data.0.unite.symbole', 'pc')
+            ->assertJsonPath('data.0.unites_vente.0.devise.code', 'USD')
+            ->assertJsonMissingPath('data.0.unites_achat');
+        $this->getJson('/api/produits?per_page=all')->assertOk()
+            ->assertJsonStructure(['data' => [['unites_achat', 'unites_vente']]]);
+        // POS prices do not alter the authoritative stock calculation.
+        $this->getJson('/api/stocks/disponible')->assertOk()->assertJsonPath('data.0.stock_actuel', 20);
+    }
+
     public function test_sale_updates_stock_cash_and_rejects_insufficient_stock(): void
     {
         $this->admin();
